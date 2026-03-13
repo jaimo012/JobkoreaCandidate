@@ -1,4 +1,5 @@
 import logging
+import subprocess
 import time
 import random
 
@@ -19,6 +20,27 @@ HUMAN_LIKE_USER_AGENT = (
 )
 
 
+def _log_chromium_version():
+    """Chromium과 ChromeDriver 버전을 로그에 출력한다 (진단용)."""
+    try:
+        result = subprocess.run(
+            ["/usr/bin/chromium", "--version"],
+            capture_output=True, text=True, timeout=5,
+        )
+        logger.info("Chromium: %s", result.stdout.strip())
+    except Exception as e:
+        logger.warning("Chromium 버전 확인 실패: %s", e)
+
+    try:
+        result = subprocess.run(
+            ["/usr/bin/chromedriver", "--version"],
+            capture_output=True, text=True, timeout=5,
+        )
+        logger.info("ChromeDriver: %s", result.stdout.strip())
+    except Exception as e:
+        logger.warning("ChromeDriver 버전 확인 실패: %s", e)
+
+
 def setup_chrome_driver():
     """Chrome WebDriver를 생성하여 반환한다.
 
@@ -33,6 +55,8 @@ def setup_chrome_driver():
     options.add_argument("--disable-blink-features=AutomationControlled")
 
     if Config.RUNNING_IN_DOCKER:
+        _log_chromium_version()
+
         options.binary_location = "/usr/bin/chromium"
         options.add_argument("--headless")
         options.add_argument("--no-sandbox")
@@ -40,7 +64,9 @@ def setup_chrome_driver():
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-software-rasterizer")
         options.add_argument("--disable-extensions")
-        options.add_argument("--single-process")
+        options.add_argument("--user-data-dir=/tmp/chrome-data")
+        options.add_argument("--crash-dumps-dir=/tmp/chrome-crashes")
+        options.add_argument("--remote-debugging-port=9222")
         options.add_argument("--lang=ko_KR")
         service = Service("/usr/bin/chromedriver")
     else:
