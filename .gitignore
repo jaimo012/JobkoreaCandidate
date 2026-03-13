@@ -37,6 +37,9 @@ build/
 # Logs
 *.log
 
+# Temp files (PDF 임시 저장)
+temp_files/
+
 # Tesseract OCR temp files
 *.tiff
 *.tif

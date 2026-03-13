@@ -21,14 +21,20 @@
 JobkoreaCandidate/
 ├── venv/                  # 가상환경 (git 미추적)
 ├── src/                   # 소스 코드 디렉토리
-│   ├── handlers/          # 기능별 핸들러 모듈
-│   └── utils/             # 유틸리티 함수 모듈
-├── .env                   # 환경 변수 (git 미추적)
+│   ├── __init__.py
+│   ├── config.py          # 환경변수 기반 설정
+│   ├── browser.py         # Chrome 드라이버 설정 + 로그인
+│   ├── google_service.py  # Google Sheets / Drive / PDF
+│   ├── ocr.py             # OCR 텍스트 추출
+│   └── scraper.py         # 크롤링 + 시트 업데이트
+├── main.py                # 진입점 (10분 간격 무한 루프)
+├── Dockerfile             # Cloudtype 배포용
+├── .env.example           # 환경변수 템플릿
+├── .env                   # 실제 환경변수 (git 미추적)
 ├── .gitignore             # git 추적 제외 목록
 ├── requirements.txt       # 패키지 의존성 목록
 ├── rules.md               # 프로젝트 규칙 (이 파일)
-├── README.md              # 프로젝트 설명서
-└── main.py                # 진입점 (엔트리 포인트)
+└── README.md              # 프로젝트 설명서
 ```
 
 ## 4. 핵심 라이브러리 용도
