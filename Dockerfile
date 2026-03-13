@@ -7,7 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr-eng \
     tesseract-ocr-kor \
     fonts-nanum \
-    fonts-nanum-coding \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CHROME_BIN=/usr/bin/chromium \
