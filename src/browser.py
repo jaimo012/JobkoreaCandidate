@@ -34,10 +34,13 @@ def setup_chrome_driver():
 
     if Config.RUNNING_IN_DOCKER:
         options.binary_location = "/usr/bin/chromium"
-        options.add_argument("--headless=new")
+        options.add_argument("--headless")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-gpu")
+        options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--single-process")
         options.add_argument("--lang=ko_KR")
         service = Service("/usr/bin/chromedriver")
     else:
