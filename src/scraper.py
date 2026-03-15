@@ -8,7 +8,10 @@ import random
 import gspread
 import pandas as pd
 from bs4 import BeautifulSoup
-from selenium.common.exceptions import TimeoutException  # [수정 1] 타임아웃 에러 잡기용 임포트
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support.ui import WebDriverWait       # [수정 1] 똑똑한 대기를 위한 모듈
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 
 from src.config import Config
 from src.ocr import extract_text_from_base64
@@ -35,14 +38,12 @@ def _human_delay(min_sec=2.0, max_sec=3.5):
     time.sleep(random.uniform(min_sec, max_sec))
 
 
-# [수정 2] 타임아웃 에러 발생 시 강제로 로딩을 멈추고 무시하는 마법의 함수!
 def _safe_get(driver, url):
     try:
         driver.get(url)
     except TimeoutException:
         logger.warning("페이지 로딩 타임아웃 발생! 화면 로딩을 강제 중지하고 있는 데이터만 추출합니다.")
         try:
-            # 브라우저의 'X(새로고침 중지)' 버튼을 누르는 것과 동일한 자바스크립트 효과
             driver.execute_script("window.stop();")
         except Exception:
             pass
@@ -131,10 +132,22 @@ def scrape_all_accepted_candidates(driver):
         target_url = Config.ACCEPT_URL.replace("PAGE_NUM", str(page_num))
         logger.info("%d페이지로 이동 중...", page_num)
         
-        # [수정 3] 불안정한 driver.get() 대신 _safe_get() 사용
         _safe_get(driver, target_url)
-        _human_delay()
-
+        
+        # [수정 2] 무작정 기다리지 않고, 페이지 번호(span.now)가 뜰 때까지 최대 15초간 똑똑하게 대기!
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "span.now"))
+            )
+        except TimeoutException:
+            logger.warning("15초가 지나도 후보자 목록(페이지 번호)이 화면에 나타나지 않습니다.")
+            logger.info("👉 [원인분석용] 현재 URL: %s", driver.current_url)
+            logger.info("👉 [원인분석용] 현재 제목: %s", driver.title)
+            # 화면에 떠있는 텍스트의 앞부분 200자만 추출해서 로그로 출력
+            soup_debug = _parse_soup(driver)
+            text_preview = soup_debug.get_text(separator=' ', strip=True)[:200]
+            logger.info("👉 [원인분석용] 화면 텍스트: %s...", text_preview)
+        
         soup = _parse_soup(driver)
 
         current_page_tag = soup.find("span", class_="now")
@@ -143,7 +156,7 @@ def scrape_all_accepted_candidates(driver):
                 logger.info("더 이상 페이지가 없습니다. (마지막: %s)", current_page_tag.text.strip())
                 break
         else:
-            logger.info("페이지 번호를 찾을 수 없어 종료합니다.")
+            logger.info("페이지 번호를 찾을 수 없어 %d페이지에서 추출을 종료합니다.", page_num)
             break
 
         candidate_rows = soup.find_all("tr", class_="title-case")
@@ -172,7 +185,6 @@ UPLOAD_COL_ORDER = ["수집일시", "담당자", "이름", "성별", "나이", "
 
 
 def process_and_upload_candidates(df_new):
-    """크롤링 결과를 구글 시트 형식으로 가공하고, 중복 제거 후 업로드한다."""
     if df_new.empty:
         logger.info("크롤링된 새로운 데이터가 없어 업로드를 건너뜁니다.")
         return
@@ -209,9 +221,6 @@ def process_and_upload_candidates(df_new):
 # Phase 2: 이력서 상세정보 + PDF + 제안정보
 # ──────────────────────────────────────────────
 def _extract_resume_details(driver, resume_url, candidate_name):
-    """개별 이력서 페이지에서 연락처, 포트폴리오, PDF를 추출한다."""
-    
-    # [수정 4] 이력서 상세 페이지 진입 시에도 안전한 로딩 함수 사용
     _safe_get(driver, resume_url)
     time.sleep(random.uniform(2.5, 3.5))
     soup = _parse_soup(driver)
@@ -270,15 +279,11 @@ def _extract_resume_details(driver, resume_url, candidate_name):
 
 
 def _extract_offer_details(driver, offer_url):
-    """제안 상세 페이지에서 포지션명, 발송일, 수행업무, 우대사항을 추출한다."""
     result = {"제안포지션": "", "제안일자": "", "수행업무": "", "우대사항": ""}
-
     if not offer_url:
         return result
 
     logger.info("  제안 상세 페이지 추가 정보를 추출합니다...")
-    
-    # [수정 5] 제안 상세 페이지 진입 시에도 안전한 로딩 함수 사용
     _safe_get(driver, offer_url)
     time.sleep(random.uniform(1.5, 2.5))
     soup = _parse_soup(driver)
@@ -326,11 +331,8 @@ REQUIRED_COLUMNS = [
     "제안포지션", "제안일자", "이력서파일URL", "수행업무", "우대사항",
 ]
 
-
 def update_empty_resumes_in_sheet(driver):
-    """구글 시트에서 휴대전화번호가 비어있는 행만 순회하며 상세정보를 채운다."""
     logger.info("구글 시트에서 업데이트 대상을 탐색합니다...")
-
     worksheet, _ = open_google_sheet()
     if not worksheet:
         return
@@ -345,10 +347,7 @@ def update_empty_resumes_in_sheet(driver):
     try:
         col_idx = {col: headers.index(col) + 1 for col in REQUIRED_COLUMNS}
     except ValueError as e:
-        logger.error(
-            "시트에 필요한 컬럼이 존재하지 않습니다: %s "
-            "(시트 1행에 해당 컬럼명이 정확히 있는지 확인하세요.)", e
-        )
+        logger.error("시트에 필요한 컬럼이 존재하지 않습니다: %s", e)
         return
 
     update_count = 0
@@ -370,7 +369,6 @@ def update_empty_resumes_in_sheet(driver):
 
         try:
             details = _extract_resume_details(driver, resume_url, name)
-
             offer_details = {"제안포지션": "", "제안일자": "", "수행업무": "", "우대사항": ""}
             if details["제안URL"]:
                 offer_details = _extract_offer_details(driver, details["제안URL"])
