@@ -2,7 +2,7 @@ import logging
 import subprocess
 import time
 import random
-import tempfile # 임시 폴더 생성을 위한 모듈 추가
+import tempfile
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -43,22 +43,20 @@ def _log_chromium_version():
 
 
 def setup_chrome_driver():
-    """Chrome WebDriver를 생성하여 반환한다.
-
-    - 서버(Docker): Headless 모드 + 시스템 Chromium 사용
-    - 로컬(Windows): GUI 모드 + webdriver_manager 자동 설치
-    """
+    """Chrome WebDriver를 생성하여 반환한다."""
     logger.info("크롬 브라우저를 준비합니다...")
 
     options = Options()
     options.add_argument(f"--user-agent={HUMAN_LIKE_USER_AGENT}")
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
+    
+    # [핵심 1] 브라우저 로딩 전략 'eager'로 변경 (뼈대만 로딩되어 메모리 절약/속도 향상)
+    options.page_load_strategy = 'eager'
 
     if Config.RUNNING_IN_DOCKER:
         _log_chromium_version()
 
-        # [핵심 변경점] 현재 권한으로 확실하게 쓸 수 있는 임시 폴더를 파이썬이 직접 생성합니다.
         chrome_data_dir = tempfile.mkdtemp(prefix="chrome-data-")
         chrome_crash_dir = tempfile.mkdtemp(prefix="chrome-crash-")
 
@@ -69,8 +67,14 @@ def setup_chrome_driver():
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-software-rasterizer")
         options.add_argument("--disable-extensions")
-        options.add_argument("--user-data-dir=/tmp/chrome-data")
-        options.add_argument("--crash-dumps-dir=/tmp/chrome-crashes")
+        
+        # [핵심 2] 불필요한 이미지와 알림을 차단하여 클라우드 서버(512MB) 메모리 사수!
+        options.add_argument("--disable-infobars")
+        options.add_argument("--disable-notifications")
+        options.add_argument("--blink-settings=imagesEnabled=false")
+
+        options.add_argument(f"--user-data-dir={chrome_data_dir}")
+        options.add_argument(f"--crash-dumps-dir={chrome_crash_dir}")
         options.add_argument("--remote-debugging-port=9222")
         options.add_argument("--lang=ko_KR")
         service = Service("/usr/bin/chromedriver")
@@ -78,13 +82,16 @@ def setup_chrome_driver():
         service = Service(ChromeDriverManager().install())
 
     driver = webdriver.Chrome(service=service, options=options)
+    
+    # [핵심 3] 120초씩 멍때리는 증상 원천 차단 (최대 30초 대기)
+    driver.set_page_load_timeout(30)
     driver.implicitly_wait(10)
 
     logger.info("크롬 브라우저가 준비되었습니다.")
     return driver
 
 
-def _human_delay(min_sec=0.5, max_sec=0.6):
+def _human_delay(min_sec=1.0, max_sec=2.0):
     time.sleep(random.uniform(min_sec, max_sec))
 
 
@@ -114,15 +121,14 @@ def login_to_jobkorea(driver):
 
         login_btn = driver.find_element(By.CLASS_NAME, "login-button")
         
-        # [수정포인트 1] 셀레니움의 기본 click() 대신 자바스크립트를 이용해 강제 클릭! (무한 로딩 방지)
+        # [핵심 4] 셀레니움의 기본 click() 대신 자바스크립트를 이용해 강제 클릭! (무한 로딩 방지)
         driver.execute_script("arguments[0].click();", login_btn)
         logger.info("로그인 버튼 클릭 완료! 응답을 기다립니다...")
 
-        # [수정포인트 2] 브라우저가 기절했는지 우리가 직접 1초마다 확인 (최대 15초까지만 대기)
+        # [핵심 5] 브라우저가 기절했는지 우리가 직접 1초마다 확인 (최대 15초 대기)
         login_success = False
         for i in range(15):
             time.sleep(1)
-            # URL에 더 이상 'Login'이 없으면 무사히 넘어간 것으로 간주
             if "Login" not in driver.current_url:
                 login_success = True
                 break
