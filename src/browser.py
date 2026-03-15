@@ -89,15 +89,13 @@ def _human_delay(min_sec=0.5, max_sec=0.6):
 
 
 def login_to_jobkorea(driver):
-    """잡코리아 기업회원 계정으로 로그인한다.
-
-    서버 환경에서는 클립보드 대신 send_keys()를 사용한다.
-    """
+    """잡코리아 기업회원 계정으로 로그인한다."""
     logger.info("잡코리아 로그인을 시작합니다...")
-    driver.get(Config.LOGIN_URL)
-    _human_delay()
-
+    
     try:
+        driver.get(Config.LOGIN_URL)
+        _human_delay()
+
         corp_tab = driver.find_element(By.CSS_SELECTOR, 'a[data-m-type="Co"]')
         corp_tab.click()
         _human_delay()
@@ -115,10 +113,25 @@ def login_to_jobkorea(driver):
         _human_delay()
 
         login_btn = driver.find_element(By.CLASS_NAME, "login-button")
-        login_btn.click()
+        
+        # [수정포인트 1] 셀레니움의 기본 click() 대신 자바스크립트를 이용해 강제 클릭! (무한 로딩 방지)
+        driver.execute_script("arguments[0].click();", login_btn)
+        logger.info("로그인 버튼 클릭 완료! 응답을 기다립니다...")
 
-        time.sleep(random.uniform(2.0, 4.0))
-        logger.info("로그인이 완료되었습니다.")
+        # [수정포인트 2] 브라우저가 기절했는지 우리가 직접 1초마다 확인 (최대 15초까지만 대기)
+        login_success = False
+        for i in range(15):
+            time.sleep(1)
+            # URL에 더 이상 'Login'이 없으면 무사히 넘어간 것으로 간주
+            if "Login" not in driver.current_url:
+                login_success = True
+                break
+        
+        if not login_success:
+            raise Exception("15초가 지나도 로그인 페이지를 벗어나지 못했습니다. 봇 탐지(캡차)에 걸렸거나 메모리가 부족할 수 있습니다.")
+            
+        logger.info("로그인이 완료되었습니다. 다음 단계로 넘어갑니다.")
+        
     except Exception as e:
         logger.error("로그인 과정 중 오류 발생: %s", e)
         raise
