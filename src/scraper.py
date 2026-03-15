@@ -8,6 +8,7 @@ import random
 import gspread
 import pandas as pd
 from bs4 import BeautifulSoup
+from selenium.common.exceptions import TimeoutException  # [수정 1] 타임아웃 에러 잡기용 임포트
 
 from src.config import Config
 from src.ocr import extract_text_from_base64
@@ -32,6 +33,21 @@ def _parse_soup(driver):
 
 def _human_delay(min_sec=2.0, max_sec=3.5):
     time.sleep(random.uniform(min_sec, max_sec))
+
+
+# [수정 2] 타임아웃 에러 발생 시 강제로 로딩을 멈추고 무시하는 마법의 함수!
+def _safe_get(driver, url):
+    try:
+        driver.get(url)
+    except TimeoutException:
+        logger.warning("페이지 로딩 타임아웃 발생! 화면 로딩을 강제 중지하고 있는 데이터만 추출합니다.")
+        try:
+            # 브라우저의 'X(새로고침 중지)' 버튼을 누르는 것과 동일한 자바스크립트 효과
+            driver.execute_script("window.stop();")
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning("페이지 이동 중 기타 오류: %s", e)
 
 
 def _extract_portfolio_links(soup):
@@ -114,7 +130,9 @@ def scrape_all_accepted_candidates(driver):
     while page_num <= Config.MAX_PAGES:
         target_url = Config.ACCEPT_URL.replace("PAGE_NUM", str(page_num))
         logger.info("%d페이지로 이동 중...", page_num)
-        driver.get(target_url)
+        
+        # [수정 3] 불안정한 driver.get() 대신 _safe_get() 사용
+        _safe_get(driver, target_url)
         _human_delay()
 
         soup = _parse_soup(driver)
@@ -192,7 +210,9 @@ def process_and_upload_candidates(df_new):
 # ──────────────────────────────────────────────
 def _extract_resume_details(driver, resume_url, candidate_name):
     """개별 이력서 페이지에서 연락처, 포트폴리오, PDF를 추출한다."""
-    driver.get(resume_url)
+    
+    # [수정 4] 이력서 상세 페이지 진입 시에도 안전한 로딩 함수 사용
+    _safe_get(driver, resume_url)
     time.sleep(random.uniform(2.5, 3.5))
     soup = _parse_soup(driver)
 
@@ -257,7 +277,9 @@ def _extract_offer_details(driver, offer_url):
         return result
 
     logger.info("  제안 상세 페이지 추가 정보를 추출합니다...")
-    driver.get(offer_url)
+    
+    # [수정 5] 제안 상세 페이지 진입 시에도 안전한 로딩 함수 사용
+    _safe_get(driver, offer_url)
     time.sleep(random.uniform(1.5, 2.5))
     soup = _parse_soup(driver)
 
