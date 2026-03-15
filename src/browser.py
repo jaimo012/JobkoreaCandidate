@@ -2,6 +2,7 @@ import logging
 import subprocess
 import time
 import random
+import tempfile # 임시 폴더 생성을 위한 모듈 추가
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -56,6 +57,10 @@ def setup_chrome_driver():
 
     if Config.RUNNING_IN_DOCKER:
         _log_chromium_version()
+
+        # [핵심 변경점] 현재 권한으로 확실하게 쓸 수 있는 임시 폴더를 파이썬이 직접 생성합니다.
+        chrome_data_dir = tempfile.mkdtemp(prefix="chrome-data-")
+        chrome_crash_dir = tempfile.mkdtemp(prefix="chrome-crash-")
 
         options.binary_location = "/usr/bin/chromium"
         options.add_argument("--headless")
